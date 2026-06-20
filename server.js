@@ -84,6 +84,9 @@ function getBrowser() {
         "--autoplay-policy=no-user-gesture-required",
         "--mute-audio",
         "--window-size=1280,720",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--lang=en-US,en",
       ],
     });
   }
@@ -101,6 +104,16 @@ async function captureFrom(embedUrl, timeoutMs = 22000) {
       "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
   );
   await page.setViewport({ width: 1280, height: 720 });
+
+  // Headless-evasion: hide navigator.webdriver and stub a couple of the
+  // signals these embeds check before serving the player.
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+    window.chrome = { runtime: {} };
+  });
+  await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9" });
 
   // Block ads + images at the request level (faster init, no ad m3u8s).
   await page.setRequestInterception(true);
@@ -147,6 +160,16 @@ async function captureFrom(embedUrl, timeoutMs = 22000) {
       referer: new URL(embedUrl).origin + "/",
     });
     console.log(`  page loaded, frames=${page.frames().length}, tapping…`);
+    // DIAG: peek at what the page actually contains (helps spot block pages).
+    try {
+      const info = await page.evaluate(() => ({
+        title: document.title,
+        bodyLen: document.body ? document.body.innerHTML.length : 0,
+        iframes: document.querySelectorAll("iframe").length,
+        text: (document.body ? document.body.innerText : "").slice(0, 120),
+      }));
+      console.log(`  page: title="${info.title}" bodyLen=${info.bodyLen} iframes=${info.iframes} text="${info.text.replace(/\n/g, " ")}"`);
+    } catch (e) {}
 
     // Nudge playback: click the player area + call .play() on any <video>,
     // including inside same-origin frames. Cross-origin frames start on their
