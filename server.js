@@ -13,7 +13,10 @@
 // Response: { ok, m3u8, referer, origin, headers, provider, ms } or { ok:false }
 
 import express from "express";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -169,6 +172,25 @@ async function captureFrom(embedUrl, timeoutMs = 22000) {
         text: (document.body ? document.body.innerText : "").slice(0, 120),
       }));
       console.log(`  page: title="${info.title}" bodyLen=${info.bodyLen} iframes=${info.iframes} text="${info.text.replace(/\n/g, " ")}"`);
+
+      // If Cloudflare served a challenge, wait for it to auto-solve (the stealth
+      // plugin often passes the JS challenge within a few seconds). Re-check the
+      // title until it's no longer the Cloudflare interstitial.
+      if (info.title.includes("Cloudflare") || info.text.includes("Checking your browser") ||
+          info.text.includes("you have been blocked") || info.text.includes("Just a moment")) {
+        console.log(`  cloudflare challenge detected — waiting up to 15s…`);
+        const cfStart = Date.now();
+        while (Date.now() - cfStart < 15000) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const t = await page.title().catch(() => "");
+          if (!t.includes("Cloudflare") && !t.includes("Just a moment")) {
+            console.log(`  cloudflare cleared → "${t}"`);
+            break;
+          }
+        }
+        const stillBlocked = (await page.title().catch(() => "")).includes("Cloudflare");
+        if (stillBlocked) console.log(`  cloudflare still blocking after wait`);
+      }
     } catch (e) {}
 
     // Nudge playback: click the player area + call .play() on any <video>,
