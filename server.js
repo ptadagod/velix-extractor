@@ -119,6 +119,12 @@ async function captureFrom(embedUrl, timeoutMs = 22000) {
   const onResponseOrRequest = (reqOrRes) => {
     if (resolved) return;
     const url = typeof reqOrRes.url === "function" ? reqOrRes.url() : reqOrRes;
+    // DIAG: log anything that looks remotely like a playlist/segment so we can
+    // see in the Railway logs whether the stream ever fires.
+    const l = url.toLowerCase();
+    if (l.includes("m3u8") || l.includes(".ts") || l.includes("playlist")) {
+      console.log(`  [m3u8?] ${url.slice(0, 140)}`);
+    }
     if (isM3u8(url) && !isAdM3u8(url)) {
       const headers =
         typeof reqOrRes.headers === "function" ? reqOrRes.headers() : {};
@@ -127,17 +133,20 @@ async function captureFrom(embedUrl, timeoutMs = 22000) {
         referer: headers["referer"] || headers["Referer"] || "",
         origin: headers["origin"] || headers["Origin"] || "",
       };
+      console.log(`  [CAPTURED] ${url.slice(0, 140)}`);
     }
   };
   page.on("request", onResponseOrRequest);
   page.on("response", (res) => onResponseOrRequest(res.request()));
 
   try {
+    console.log(`  goto: ${embedUrl}`);
     await page.goto(embedUrl, {
       waitUntil: "domcontentloaded",
       timeout: 15000,
       referer: new URL(embedUrl).origin + "/",
     });
+    console.log(`  page loaded, frames=${page.frames().length}, tapping…`);
 
     // Nudge playback: click the player area + call .play() on any <video>,
     // including inside same-origin frames. Cross-origin frames start on their
@@ -202,6 +211,7 @@ app.get("/extract", async (req, res) => {
 
   for (const a of attempts) {
     try {
+      console.log(`[extract] trying ${a.provider}: ${a.embed}`);
       const r = await captureFrom(a.embed);
       if (r && r.m3u8) {
         return res.json({
