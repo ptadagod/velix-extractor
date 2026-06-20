@@ -1,0 +1,17 @@
+{
+  "name": "velix-extractor",
+  "version": "1.0.0",
+  "description": "Server-side m3u8 extractor for Velix — runs headless Chromium (like BrowseHere) to resolve stream URLs from embed providers.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "puppeteer": "^23.0.0"
+  }
+}
